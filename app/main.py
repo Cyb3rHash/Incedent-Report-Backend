@@ -129,7 +129,7 @@ def create_app() -> FastAPI:
 
     # Include routers
     app.include_router(incidents_router)
-    bind_session_dependency(incidents_router, session_dep)
+    bind_session_dependency(app, session_dep)
 
     return app
 

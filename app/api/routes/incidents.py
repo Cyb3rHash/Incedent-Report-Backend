@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
@@ -12,6 +12,15 @@ from app.schemas.incidents import IncidentCreate, IncidentListResponse, Incident
 from app.services.incidents_service import IncidentsService
 
 router = APIRouter(prefix="/api/incidents", tags=["Incidents"])
+
+
+def _session_placeholder() -> None:
+    """Placeholder dependency to be overridden by the app factory.
+
+    This must be a stable, module-level callable so FastAPI dependency overrides can
+    reliably reference it (lambdas would create distinct objects).
+    """
+    return None
 
 
 def _get_flow(
@@ -31,7 +40,7 @@ def _get_flow(
 )
 async def create_incident(
     payload: IncidentCreate,
-    session: Annotated[AsyncSession, Depends(lambda: None)] = None,  # overridden below
+    session: Annotated[AsyncSession, Depends(_session_placeholder)] = None,  # overridden below
 ) -> IncidentRead:
     """Create an incident.
 
@@ -52,7 +61,7 @@ async def create_incident(
 async def list_incidents(
     limit: int = Query(20, ge=1, le=200, description="Max number of items to return."),
     offset: int = Query(0, ge=0, description="Number of items to skip."),
-    session: Annotated[AsyncSession, Depends(lambda: None)] = None,  # overridden below
+    session: Annotated[AsyncSession, Depends(_session_placeholder)] = None,  # overridden below
 ) -> IncidentListResponse:
     """List incidents with pagination."""
     flow = _get_flow(session)
@@ -68,7 +77,7 @@ async def list_incidents(
 )
 async def get_incident(
     incident_id: uuid.UUID = Path(..., description="Incident UUID."),
-    session: Annotated[AsyncSession, Depends(lambda: None)] = None,  # overridden below
+    session: Annotated[AsyncSession, Depends(_session_placeholder)] = None,  # overridden below
 ) -> IncidentRead:
     """Get incident by UUID."""
     flow = _get_flow(session)
@@ -85,7 +94,7 @@ async def get_incident(
 async def update_incident(
     payload: IncidentUpdate,
     incident_id: uuid.UUID = Path(..., description="Incident UUID."),
-    session: Annotated[AsyncSession, Depends(lambda: None)] = None,  # overridden below
+    session: Annotated[AsyncSession, Depends(_session_placeholder)] = None,  # overridden below
 ) -> IncidentRead:
     """Update incident by UUID."""
     flow = _get_flow(session)
@@ -101,7 +110,7 @@ async def update_incident(
 )
 async def delete_incident(
     incident_id: uuid.UUID = Path(..., description="Incident UUID."),
-    session: Annotated[AsyncSession, Depends(lambda: None)] = None,  # overridden below
+    session: Annotated[AsyncSession, Depends(_session_placeholder)] = None,  # overridden below
 ) -> Response:
     """Delete incident by UUID.
 
@@ -114,19 +123,25 @@ async def delete_incident(
 
 
 # PUBLIC_INTERFACE
-def bind_session_dependency(router_to_bind: APIRouter, session_dep):
-    """Bind the real DB session dependency to this router.
+def bind_session_dependency(app: FastAPI, session_dep) -> None:
+    """Bind the real DB session dependency to the incidents router via FastAPI overrides.
 
-    This keeps the router functions easy to type-check while allowing app factory to inject
-    the dependency (so tests can override it cleanly too).
+    Flow name: "RouterSessionDependencyBinding"
 
-    Args:
-      router_to_bind: The incidents router to bind.
-      session_dep: FastAPI dependency callable returning AsyncSession.
+    Contract:
+      Inputs:
+        - app: FastAPI application instance that owns dependency_overrides.
+        - session_dep: dependency callable yielding an AsyncSession OR raising DbNotConfiguredError.
+      Outputs:
+        - None (registers dependency override in-place).
+      Errors:
+        - Does not raise under normal operation.
+      Side effects:
+        - Mutates app.dependency_overrides to map the router placeholder dependency to session_dep.
+
+    Why:
+      FastAPI’s canonical override mechanism is app.dependency_overrides. Relying on
+      router.dependency_overrides_provider is brittle because it can be None during startup
+      depending on include order / framework version.
     """
-    # We used a placeholder `Depends(lambda: None)` in route signatures.
-    # Here we override it at runtime by modifying dependency_overrides at app creation time.
-    # FastAPI doesn't allow changing Depends objects after definition, so we override the lambda.
-    # (This is a stable, centralized pattern used once, rather than scattered ad-hoc dependencies.)
-    placeholder = lambda: None  # noqa: E731
-    router_to_bind.dependency_overrides_provider.dependency_overrides[placeholder] = session_dep
+    app.dependency_overrides[_session_placeholder] = session_dep
