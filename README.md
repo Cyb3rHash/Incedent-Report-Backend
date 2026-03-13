@@ -20,22 +20,19 @@ Optional:
 - `ALLOWED_ORIGINS` comma-separated list for CORS
 - `HOST`, `PORT`, `LOG_LEVEL`
 
-## Schema (manual)
-This backend assumes the following objects already exist in your database:
+## Schema (manual, no Alembic)
+This backend intentionally does **not** use Alembic. You must create the schema yourself.
+
+Paste/apply the provided schema file:
+
+- `schema.sql` (in this repo)
+
+It creates:
+- Extension: `pgcrypto` (for `gen_random_uuid()`)
 - Enum type: `incident_severity` with labels: `Low`, `Medium`, `High`, `Critical`
 - Enum type: `incident_status` with labels: `Open`, `In Progress`, `Resolved`
-- Table: `incidents` with columns:
-  - `id` UUID PRIMARY KEY
-  - `title` VARCHAR(255) NOT NULL
-  - `description` TEXT NULL
-  - `severity` incident_severity NOT NULL
-  - `status` incident_status NOT NULL
-  - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
-  - `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
-
-Notes:
-- `updated_at` is expected to be maintained by your schema (e.g., trigger) or left as-is; the API updates fields and reads back server values.
-- If you want `updated_at` to always reflect updates at the DB level, add a trigger in your schema.
+- Table: `incidents`
+- Trigger: maintains `updated_at` automatically on UPDATE
 
 ## Install + Run (local)
 ```bash
