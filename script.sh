@@ -56,6 +56,12 @@ else
 fi
 
 # -------------------------------
+# Preflight DATABASE_URL (shape + DNS)
+# -------------------------------
+echo "==> Validating DATABASE_URL (shape + DNS preflight)"
+"${VENV_PY}" -c "from app.db.url import validate_database_url_for_runtime; import os; validate_database_url_for_runtime(os.environ.get('DATABASE_URL',''), dns_preflight=True); print('DATABASE_URL OK')"
+
+# -------------------------------
 # Run database migrations
 # -------------------------------
 if [[ "${SKIP_MIGRATIONS:-0}" != "1" ]]; then

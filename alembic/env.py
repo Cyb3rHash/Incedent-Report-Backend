@@ -61,24 +61,33 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    """Run migrations in 'online' mode with async engine."""
-    settings = get_settings()
-    normalized = normalize_asyncpg_database_url(settings.database_url)
+    """Run migrations in 'online' mode with async engine.
 
-    configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = normalized.sqlalchemy_url
+    Error behavior:
+      - Raises ValueError with an actionable message if DATABASE_URL is missing/invalid
+        or if the hostname cannot be resolved (common misconfiguration with Neon URLs).
+    """
+    try:
+        settings = get_settings()
+        normalized = normalize_asyncpg_database_url(settings.database_url)
 
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        connect_args=normalized.connect_args,
-    )
+        configuration = config.get_section(config.config_ini_section) or {}
+        configuration["sqlalchemy.url"] = normalized.sqlalchemy_url
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+        connectable = async_engine_from_config(
+            configuration,
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+            connect_args=normalized.connect_args,
+        )
 
-    await connectable.dispose()
+        async with connectable.connect() as connection:
+            await connection.run_sync(do_run_migrations)
+
+        await connectable.dispose()
+    except ValueError as e:
+        # Provide a crisp failure for config/DNS issues rather than a deep stack trace.
+        raise RuntimeError(f"Alembic cannot run migrations due to invalid DATABASE_URL: {e}") from e
 
 
 if context.is_offline_mode():
