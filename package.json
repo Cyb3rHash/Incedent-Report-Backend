@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "backend": "node scripts/run-backend.js dev",
+    "backend:prod": "node scripts/run-backend.js prod"
   },
   "dependencies": {
     "cors": "^2.8.5",
