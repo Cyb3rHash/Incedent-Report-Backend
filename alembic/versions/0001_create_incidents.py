@@ -70,8 +70,12 @@ def upgrade() -> None:
         sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("severity", sa.Enum(name="incident_severity"), nullable=False),
-        sa.Column("status", sa.Enum(name="incident_status"), nullable=False),
+        # IMPORTANT:
+        # - We create the enum types explicitly above using idempotent DO blocks.
+        # - Therefore, we must prevent SQLAlchemy from auto-emitting CREATE TYPE during table creation
+        #   (which can fail with DuplicateObjectError on partial reruns / existing schemas).
+        sa.Column("severity", sa.Enum(name="incident_severity", create_type=False), nullable=False),
+        sa.Column("status", sa.Enum(name="incident_status", create_type=False), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )

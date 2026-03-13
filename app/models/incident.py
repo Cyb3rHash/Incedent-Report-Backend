@@ -41,6 +41,9 @@ class Incident(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # NOTE:
+    # Enum *types* are created by Alembic migrations (idempotently) to avoid DuplicateObjectError
+    # on environments where the type already exists (e.g., partial migration runs).
     severity: Mapped[IncidentSeverity] = mapped_column(
         Enum(IncidentSeverity, name="incident_severity"),
         nullable=False,
