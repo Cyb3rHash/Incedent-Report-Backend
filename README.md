@@ -1,11 +1,11 @@
-# Incident Report Backend (FastAPI + Neon Postgres)
+# Incident Report Backend (FastAPI + Postgres)
 
-This container provides a working FastAPI backend with Neon PostgreSQL integration and full Incident CRUD.
+This container provides a working FastAPI backend with PostgreSQL integration and full Incident CRUD.
 
 ## Features
 - FastAPI app with OpenAPI docs (`/docs`, `/openapi.json`)
-- Neon Postgres persistence via SQLAlchemy (async) + asyncpg
-- Alembic migrations for schema setup
+- Postgres persistence via SQLAlchemy (async) + asyncpg
+- No Alembic dependency: schema is expected to be created manually (you paste/apply SQL yourself)
 - Structured JSON error responses (validation + not found + server errors)
 - Incident CRUD endpoints under `/api/incidents`
 
@@ -20,21 +20,28 @@ Optional:
 - `ALLOWED_ORIGINS` comma-separated list for CORS
 - `HOST`, `PORT`, `LOG_LEVEL`
 
-See `.env.example`.
+## Schema (manual)
+This backend assumes the following objects already exist in your database:
+- Enum type: `incident_severity` with labels: `Low`, `Medium`, `High`, `Critical`
+- Enum type: `incident_status` with labels: `Open`, `In Progress`, `Resolved`
+- Table: `incidents` with columns:
+  - `id` UUID PRIMARY KEY
+  - `title` VARCHAR(255) NOT NULL
+  - `description` TEXT NULL
+  - `severity` incident_severity NOT NULL
+  - `status` incident_status NOT NULL
+  - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+  - `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+Notes:
+- `updated_at` is expected to be maintained by your schema (e.g., trigger) or left as-is; the API updates fields and reads back server values.
+- If you want `updated_at` to always reflect updates at the DB level, add a trigger in your schema.
 
 ## Install + Run (local)
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# Run DB migrations (creates tables)
-# IMPORTANT: `python -m alembic ...` does NOT work (Alembic has no `__main__` module).
-# Use the venv-installed `alembic` console script so the correct interpreter is used.
-alembic upgrade head
-
-# If you prefer not to activate the venv:
-# .venv/bin/alembic upgrade head
 
 # Start server
 uvicorn app.main:app --host 0.0.0.0 --port 3002
@@ -51,10 +58,3 @@ Base URL: `/api`
 - `GET /api/incidents/{incident_id}` - get by id
 - `PUT /api/incidents/{incident_id}` - update incident
 - `DELETE /api/incidents/{incident_id}` - delete incident
-
-## Notes
-- UUID is used as the primary key.
-- `severity`: Low | Medium | High | Critical
-- `status`: Open | In Progress | Resolved
-- `created_at` is server-generated.
-- `updated_at` auto-updates on modification.
