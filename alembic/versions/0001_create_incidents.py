@@ -19,9 +19,50 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Enums
-    op.execute("CREATE TYPE incident_severity AS ENUM ('Low', 'Medium', 'High', 'Critical')")
-    op.execute("CREATE TYPE incident_status AS ENUM ('Open', 'In Progress', 'Resolved')")
+    # Enums (idempotent)
+    #
+    # Contract:
+    #   - If the enum types already exist (common after partial runs or manual schema setup),
+    #     this migration must not fail with DuplicateObjectError.
+    #   - If they do not exist, they are created with the required labels.
+    #
+    # Notes:
+    #   - Postgres does not support `CREATE TYPE ... IF NOT EXISTS` for enums, so we use
+    #     a DO block checking pg_type/pg_namespace.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'incident_severity'
+                  AND n.nspname = current_schema()
+            ) THEN
+                CREATE TYPE incident_severity AS ENUM ('Low', 'Medium', 'High', 'Critical');
+            END IF;
+        END
+        $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'incident_status'
+                  AND n.nspname = current_schema()
+            ) THEN
+                CREATE TYPE incident_status AS ENUM ('Open', 'In Progress', 'Resolved');
+            END IF;
+        END
+        $$;
+        """
+    )
 
     # Table
     op.create_table(
@@ -38,5 +79,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("incidents")
-    op.execute("DROP TYPE incident_status")
-    op.execute("DROP TYPE incident_severity")
+    # Idempotent drops help when downgrading after partial/failed runs.
+    op.execute("DROP TYPE IF EXISTS incident_status")
+    op.execute("DROP TYPE IF EXISTS incident_severity")
