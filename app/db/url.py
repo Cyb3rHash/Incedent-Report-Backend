@@ -134,15 +134,19 @@ def normalize_asyncpg_database_url(raw_url: str) -> NormalizedDatabaseConfig:
       - Neon commonly provides connection strings like:
           postgresql://.../db?sslmode=require
       - With SQLAlchemy + asyncpg, URL query params are forwarded as connect kwargs to
-        asyncpg.connect(). asyncpg does NOT accept 'sslmode', causing:
-          TypeError: connect() got an unexpected keyword argument 'sslmode'
+        asyncpg.connect(). Some common URL params are NOT accepted by asyncpg, e.g.:
+          - sslmode -> TypeError: connect() got an unexpected keyword argument 'sslmode'
+          - channel_binding -> TypeError: connect() got an unexpected keyword argument 'channel_binding'
       - A misconfigured hostname otherwise fails later as:
           socket.gaierror: [Errno -5] No address associated with hostname
 
     What this does:
       1) Validates DATABASE_URL shape and (by default) performs a DNS preflight for the host.
       2) Normalizes postgres/postgresql scheme to postgresql+asyncpg.
-      3) Removes `sslmode` from the URL query string so it isn't forwarded to asyncpg.
+      3) Removes asyncpg-unsupported URL query params so they aren't forwarded to asyncpg.
+         Today this includes:
+           - sslmode
+           - channel_binding
       4) Maps sslmode requirement to SQLAlchemy connect_args:
            sslmode=require|verify-ca|verify-full  -> connect_args["ssl"] = "require"
          (This is sufficient for Neon, which requires TLS.)
@@ -164,7 +168,10 @@ def normalize_asyncpg_database_url(raw_url: str) -> NormalizedDatabaseConfig:
     for k, v in query_pairs:
         query[k] = v
 
+    # asyncpg.connect() does not accept several libpq-style URL params; SQLAlchemy forwards
+    # query params as kwargs to asyncpg, so we must strip them here.
     sslmode = _pop_query_param(query, "sslmode")
+    _pop_query_param(query, "channel_binding")
     ssl = _pop_query_param(query, "ssl")  # some providers use ssl=true
 
     connect_args: Dict[str, Any] = {}
