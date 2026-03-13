@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
@@ -102,11 +102,15 @@ async def update_incident(
 async def delete_incident(
     incident_id: uuid.UUID = Path(..., description="Incident UUID."),
     session: Annotated[AsyncSession, Depends(lambda: None)] = None,  # overridden below
-) -> None:
-    """Delete incident by UUID."""
+) -> Response:
+    """Delete incident by UUID.
+
+    Returns:
+      Response: Empty 204 No Content response.
+    """
     flow = _get_flow(session)
     await flow.delete(incident_id)
-    return None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # PUBLIC_INTERFACE
