@@ -10,13 +10,22 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import Settings
+from app.db.url import normalize_asyncpg_database_url
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
-    # Note: Neon typically requires SSL; include ?sslmode=require in DATABASE_URL when needed.
+    """Create the SQLAlchemy async engine.
+
+    Notes:
+      - Neon commonly uses `?sslmode=require`. asyncpg does not support `sslmode` kwarg,
+        so we normalize the URL and pass SSL via SQLAlchemy connect_args instead.
+    """
+    normalized = normalize_asyncpg_database_url(settings.database_url)
+
     return create_async_engine(
-        settings.database_url,
+        normalized.sqlalchemy_url,
         pool_pre_ping=True,
+        connect_args=normalized.connect_args,
     )
 
 

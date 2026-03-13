@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
+from app.db.url import normalize_asyncpg_database_url
 from app.models.incident import Base  # noqa: F401  (ensures models are registered)
 
 # Alembic Config object
@@ -26,24 +27,15 @@ def get_url() -> str:
     Contract:
       - Reads DATABASE_URL via Settings.
       - Ensures the URL uses the asyncpg driver for async SQLAlchemy migrations.
-        If user provides `postgresql://...` (or `postgres://...`), normalize to
-        `postgresql+asyncpg://...` so Alembic never attempts to import psycopg2.
+      - Removes `sslmode` from the URL query string (asyncpg does not accept it),
+        while still allowing SSL to be enforced via connect_args in online mode.
 
     Returns:
-      str: SQLAlchemy URL guaranteed to use the asyncpg driver.
+      str: SQLAlchemy URL guaranteed to use the asyncpg driver and safe for asyncpg.
     """
     settings = get_settings()
-    url = settings.database_url.strip()
-
-    # Normalize common Postgres URL schemes that default to psycopg2.
-    # SQLAlchemy's async engine requires the "+asyncpg" driver marker.
-    if url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgres://"):
-        # Some providers use the shorter alias.
-        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-
-    return url
+    normalized = normalize_asyncpg_database_url(settings.database_url)
+    return normalized.sqlalchemy_url
 
 
 def run_migrations_offline() -> None:
@@ -70,13 +62,17 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode with async engine."""
+    settings = get_settings()
+    normalized = normalize_asyncpg_database_url(settings.database_url)
+
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = get_url()
+    configuration["sqlalchemy.url"] = normalized.sqlalchemy_url
 
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=normalized.connect_args,
     )
 
     async with connectable.connect() as connection:
