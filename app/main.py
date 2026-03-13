@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -12,7 +12,7 @@ from starlette.status import HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY, 
 
 from app.api.routes.incidents import bind_session_dependency, router as incidents_router
 from app.core.config import Settings, get_settings
-from app.core.errors import AppError, ApiErrorPayload, NotFoundError
+from app.core.errors import AppError, ApiErrorPayload, DbNotConfiguredError, NotFoundError
 from app.core.logging import configure_logging
 from app.db.session import create_engine, create_session_factory, get_db_session
 
@@ -44,11 +44,35 @@ def create_app() -> FastAPI:
         openapi_tags=OPENAPI_TAGS,
     )
 
-    # DB engine/session factory stored on app state for reuse.
-    engine: AsyncEngine = create_engine(settings)
-    session_factory: async_sessionmaker = create_session_factory(engine)
-    app.state.engine = engine
-    app.state.session_factory = session_factory
+    # -------------------------------
+    # Optional DB wiring
+    # -------------------------------
+    # Contract:
+    #   - If DATABASE_URL is set: configure engine + session dependency normally.
+    #   - If DATABASE_URL is missing: keep server up; DB-backed endpoints return 503 with a
+    #     clear, structured error explaining how to configure the DB.
+    if settings.database_url:
+        engine: AsyncEngine = create_engine(settings)
+        session_factory: async_sessionmaker = create_session_factory(engine)
+        app.state.engine = engine
+        app.state.session_factory = session_factory
+
+        async def session_dep():
+            async for s in get_db_session(session_factory):
+                yield s
+
+        logger.info("Database configured: enabled DB-backed endpoints.")
+    else:
+        app.state.engine = None
+        app.state.session_factory = None
+
+        async def session_dep():
+            raise DbNotConfiguredError(
+                "Database is not configured. Set env var DATABASE_URL to enable this endpoint.",
+                details={"missing": ["DATABASE_URL"]},
+            )
+
+        logger.warning("DATABASE_URL not set: starting without DB. DB-backed endpoints will return 503.")
 
     if settings.allowed_origins:
         app.add_middleware(
@@ -68,11 +92,18 @@ def create_app() -> FastAPI:
     )
     async def health() -> Dict[str, Any]:
         """Health check endpoint."""
-        return {"status": "ok"}
+        return {"status": "ok", "db_configured": bool(settings.database_url)}
 
     @app.exception_handler(NotFoundError)
     async def not_found_handler(_request: Request, exc: NotFoundError) -> JSONResponse:
         return _structured_error(HTTP_404_NOT_FOUND, ApiErrorPayload(code=exc.code, message=exc.message, details=exc.details))
+
+    @app.exception_handler(DbNotConfiguredError)
+    async def db_not_configured_handler(_request: Request, exc: DbNotConfiguredError) -> JSONResponse:
+        return _structured_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            ApiErrorPayload(code=exc.code, message=exc.message, details=exc.details),
+        )
 
     @app.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
@@ -95,11 +126,6 @@ def create_app() -> FastAPI:
             HTTP_500_INTERNAL_SERVER_ERROR,
             ApiErrorPayload(code="INTERNAL_SERVER_ERROR", message="Unexpected server error.", details=None),
         )
-
-    # Bind router dependencies (request-scoped session).
-    async def session_dep():
-        async for s in get_db_session(session_factory):
-            yield s
 
     # Include routers
     app.include_router(incidents_router)

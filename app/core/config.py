@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 def _get_env(name: str, default: str | None = None) -> str | None:
@@ -21,28 +21,24 @@ class Settings:
     """Typed configuration for the service.
 
     Contract:
-      - DATABASE_URL is required (Neon postgres connection string).
+      - DATABASE_URL is optional. If missing, the server can still start, but any endpoint
+        requiring database access must return a clear error response.
       - ALLOWED_ORIGINS is optional CSV.
       - LOG_LEVEL is optional and used by logging config.
 
     Errors:
-      - Raises ValueError when DATABASE_URL is missing.
+      - Does not raise for missing DATABASE_URL (DB is optional at startup).
     """
 
     app_name: str
     app_version: str
-    database_url: str
+    database_url: Optional[str]
     allowed_origins: List[str]
     log_level: str
 
     @staticmethod
     def from_env() -> "Settings":
         database_url = _get_env("DATABASE_URL")
-        if not database_url:
-            raise ValueError(
-                "Missing required env var DATABASE_URL. "
-                "Set DATABASE_URL to your Neon Postgres connection string."
-            )
 
         return Settings(
             app_name=_get_env("APP_NAME", "Incident Report Backend") or "Incident Report Backend",

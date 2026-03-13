@@ -42,3 +42,10 @@ class DatabaseError(AppError):
 
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(code="DATABASE_ERROR", message=message, details=details)
+
+
+class DbNotConfiguredError(AppError):
+    """Raised when a DB-backed endpoint is called but DATABASE_URL is not configured."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(code="DB_NOT_CONFIGURED", message=message, details=details)
