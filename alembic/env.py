@@ -21,8 +21,29 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
+    """Return the DB URL for Alembic migrations.
+
+    Contract:
+      - Reads DATABASE_URL via Settings.
+      - Ensures the URL uses the asyncpg driver for async SQLAlchemy migrations.
+        If user provides `postgresql://...` (or `postgres://...`), normalize to
+        `postgresql+asyncpg://...` so Alembic never attempts to import psycopg2.
+
+    Returns:
+      str: SQLAlchemy URL guaranteed to use the asyncpg driver.
+    """
     settings = get_settings()
-    return settings.database_url
+    url = settings.database_url.strip()
+
+    # Normalize common Postgres URL schemes that default to psycopg2.
+    # SQLAlchemy's async engine requires the "+asyncpg" driver marker.
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        # Some providers use the shorter alias.
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    return url
 
 
 def run_migrations_offline() -> None:
