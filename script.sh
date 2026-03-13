@@ -6,7 +6,8 @@ set -euo pipefail
 # What it does:
 #  1) Creates/uses a local Python virtualenv in .venv
 #  2) Installs pip deps from requirements.txt
-#  3) Runs alembic migrations (alembic upgrade head)
+#  3) Runs alembic migrations via module invocation (python -m alembic upgrade head)
+#     This avoids "alembic: command not found" when the venv isn't on PATH.
 #  4) Starts uvicorn (app.main:app)
 #
 # Prereqs:
@@ -48,27 +49,28 @@ if [[ ! -d "${VENV_DIR}" ]]; then
   "${PYTHON_BIN}" -m venv "${VENV_DIR}"
 fi
 
-# shellcheck disable=SC1091
-source "${VENV_DIR}/bin/activate"
+VENV_PY="${SCRIPT_DIR}/${VENV_DIR}/bin/python"
+VENV_PIP="${SCRIPT_DIR}/${VENV_DIR}/bin/pip"
+VENV_UVICORN="${SCRIPT_DIR}/${VENV_DIR}/bin/uvicorn"
 
 echo "==> Upgrading pip/setuptools/wheel"
-python -m pip install --upgrade pip setuptools wheel
+"${VENV_PY}" -m pip install --upgrade pip setuptools wheel
 
 if [[ "${REINSTALL:-0}" == "1" ]]; then
   echo "==> Reinstall requested (REINSTALL=1). Installing requirements with --force-reinstall"
-  pip install --force-reinstall -r requirements.txt
+  "${VENV_PIP}" install --force-reinstall -r requirements.txt
 else
   echo "==> Installing requirements"
-  pip install -r requirements.txt
+  "${VENV_PIP}" install -r requirements.txt
 fi
 
 if [[ "${SKIP_MIGRATIONS:-0}" != "1" ]]; then
-  echo "==> Running migrations: alembic upgrade head"
-  alembic upgrade head
+  echo "==> Running migrations: ${VENV_PY} -m alembic upgrade head"
+  "${VENV_PY}" -m alembic upgrade head
 else
   echo "==> Skipping migrations (SKIP_MIGRATIONS=1)"
 fi
 
 echo "==> Starting server: uvicorn app.main:app --host ${HOST} --port ${PORT}"
 echo "    OpenAPI docs: http://localhost:${PORT}/docs"
-exec uvicorn app.main:app --host "${HOST}" --port "${PORT}"
+exec "${VENV_UVICORN}" app.main:app --host "${HOST}" --port "${PORT}"

@@ -29,7 +29,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run DB migrations (creates tables)
-alembic upgrade head
+# Use module invocation so it works even if `alembic` isn't on PATH.
+python -m alembic upgrade head
 
 # Start server
 uvicorn app.main:app --host 0.0.0.0 --port 3002
